@@ -30,3 +30,9 @@ Every script includes a detailed XML summary header that provides an at-a-glance
 /// </summary>
 ```
 ---
+
+## Contact
+
+Please use Issues to contact me if you want a script updated or you have found a issue, which can lead to making the script better etc.
+
+---
