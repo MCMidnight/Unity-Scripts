@@ -1,7 +1,8 @@
 (Tested on Unity 6000.0.58f2)
+
 This is a Example of applying a updated Player Movement script to the UpdateManager.
 
-```
+```c#
 
 using UnityEngine;
 
@@ -188,5 +189,4 @@ public class PlayerMovement : MonoBehaviour
         _characterController.Move(finalVelocity * Time.deltaTime);
     }
 }
-
 ```
