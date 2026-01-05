@@ -2,21 +2,16 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-
 /// <summary>
 /// Update Manager Assessment - Midnight  14/10/2025
 /// More info Coming Soon
 /// STANDALONE: Does not require any other scripts.
+/// NOTE: PLEASE DO NOT KILL OR DESTROY OBJECTS WITHOUT UNSUBSCRIBING IF they are using this if you do this script DOES NOT check.
+/// Updated: by Midnight - 05/01/2025
 /// </summary>
 
 public class UpdateManager : MonoBehaviour
 {
-    public enum UpdateType
-    {
-        Update,
-        FixedUpdate,
-        LateUpdate
-    }
     
     [Serializable]
     public struct SubscriptionToken
@@ -34,9 +29,9 @@ public class UpdateManager : MonoBehaviour
     
     [SerializeField] private int initialCapacity = 256;
     
-    private readonly Dictionary<UpdateType, List<Action>> _subs = new Dictionary<UpdateType, List<Action>>();
-    
-    private static Action[] _buffer = new Action[256];
+    private readonly List<Action>[] _subs = new List<Action>[3]; 
+    // I didn't actually Know this but adding the [3] means there are 3 Lists 0 = Update, 1 = Fixed, 2 = Late.
+    // Which this method is insanely fast, for what this doing It needs to be.
     
     private void Awake()
     {
@@ -45,10 +40,9 @@ public class UpdateManager : MonoBehaviour
             Instance = this;
             DontDestroyOnLoad(gameObject);
             name = nameof(UpdateManager);
-            
-            foreach (UpdateType type in Enum.GetValues(typeof(UpdateType)))
+            for (var i = 0; i < 3; i++) // Initialize all 3 update lists.
             {
-                _subs[type] = new List<Action>(initialCapacity);
+                _subs[i] = new List<Action>(initialCapacity);
             }
         }
         else if (Instance != this) Destroy(gameObject);
@@ -68,7 +62,7 @@ public class UpdateManager : MonoBehaviour
     public SubscriptionToken Subscribe(UpdateType type, Action action)
     {
         if (action == null) return new SubscriptionToken(type, -1);
-        var list = _subs[type];
+        var list = _subs[(int)type];
         var index = list.Count;
         list.Add(action);
         return new SubscriptionToken(type, index);
@@ -76,14 +70,18 @@ public class UpdateManager : MonoBehaviour
 
     /// <summary>
     /// Subscribes to the update manager and returns true if the action was added.
-    /// This method doesn't allow duplicates.
+    /// This method doesn't allow duplicate actions.
+    /// it out puts SubscriptionToken so you can remove it if needed. - I BONK MYSELF FOR THIS SHOULD HAVE BEEN HERE FROM THE SATRT. 
     /// </summary>
-    public bool TrySubscribe(UpdateType type, Action action)
+    public bool TrySubscribe(UpdateType type, Action action, out SubscriptionToken? token)
     {
+        token = null;
         if (action == null) return false;
-        var list = _subs[type];
+        var list = _subs[(int)type];
+        var index = list.Count;
         if (list.Contains(action)) return false;
         list.Add(action);
+        token =  new SubscriptionToken(type, index);
         return true;
     }
 
@@ -93,7 +91,7 @@ public class UpdateManager : MonoBehaviour
     public bool Unsubscribe(UpdateType type, Action action)
     {
         if (action == null) return false;
-        var list = _subs[type];
+        var list = _subs[(int)type];
         for (var i = list.Count - 1; i >= 0; i--)
         {
             if (list[i] != action) continue;
@@ -112,14 +110,10 @@ public class UpdateManager : MonoBehaviour
     public bool Unsubscribe(SubscriptionToken token)
     {
         if (token.Index < 0) return false;
-        var list = _subs[token.Type];
+        var list = _subs[(int)token.Type];
         if (token.Index >= list.Count || list[token.Index] == null) return false;
-        
         var last = list.Count - 1;
-        if (token.Index != last)
-        {
-            list[token.Index] = list[last];
-        }
+        if (token.Index != last) list[token.Index] = list[last];
         list.RemoveAt(last);
         return true;
     }
@@ -130,82 +124,55 @@ public class UpdateManager : MonoBehaviour
     public bool IsValid(SubscriptionToken token)
     {
         if (token.Index < 0) return false;
-        var list = _subs[token.Type];
+        var list = _subs[(int)token.Type];
         return token.Index < list.Count && list[token.Index] != null;
     }
 
     /// <summary>
     /// Unsubscribes all subscribers of the given update type.
     /// </summary>
-    public void ClearSubscribers(UpdateType type)
-    {
-        _subs[type].Clear();
-    }
+    public void ClearSubscribers(UpdateType type) => _subs[(int)type].Clear();
 
     /// <summary>
     /// Unsubscribes all subscribers from all update types.
     /// </summary>
     private void ClearAllSubscribers()
     {
-        foreach (var list in _subs.Values)
+        for (var i = 0; i < _subs.Length; i++)
         {
-            list.Clear();
+            _subs[i].Clear();
         }
     }
 
-    public int GetSubscriberCount(UpdateType type)
-    {
-        return _subs[type].Count;
-    }
+    /// <summary>
+    /// Gets Subscriber Count for the specific Update Type.
+    /// </summary>
+    public int GetSubscriberCount(UpdateType type) => _subs[(int)type].Count;
+
+    #region  DO NOT TOUCH
+    /// <summary>
+    /// Okay you can Touch these but keep in mind they are ran from
+    /// </summary>
+    private void Update() => InvokeSubscribers(UpdateType.Update);
+    private void FixedUpdate() => InvokeSubscribers(UpdateType.FixedUpdate);
+    private void LateUpdate() => InvokeSubscribers(UpdateType.LateUpdate);
+    #endregion
     
-    private void Update()
+    private void InvokeSubscribers(UpdateType type) // Reduced Over head and faster, but less safe.
     {
-        InvokeSubscribers(UpdateType.Update);
-    }
-    
-    private void FixedUpdate()
-    {
-        InvokeSubscribers(UpdateType.FixedUpdate);
-    }
-    
-    private void LateUpdate()
-    {
-        InvokeSubscribers(UpdateType.LateUpdate);
-    }
-    
-    private void InvokeSubscribers(UpdateType type)
-    {
-        var list = _subs[type];
+        var list = _subs[(int)type];
         var count = list.Count;
         if (count == 0) return;
-        
-        if (_buffer.Length < count)
-            Array.Resize(ref _buffer, count * 2);
-        
-        list.CopyTo(_buffer, 0);
-        
         for (var i = 0; i < count; i++)
         {
-            var action = _buffer[i];
-            if (action == null) continue;
-            try
-            {
-                action();
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[UpdateManager] Exception in {type} subscriber: {ex}");
-            }
+            list[i]();
         }
-        
-        var writeIndex = 0;
-        for (var readIndex = 0; readIndex < count; readIndex++)
-        {
-            var action = list[readIndex];
-            if (action == null) continue;
-            list[writeIndex++] = action;
-        }
-        if (writeIndex < count)
-            list.RemoveRange(writeIndex, count - writeIndex);
     }
+}
+
+public enum UpdateType
+{
+    Update,
+    FixedUpdate,
+    LateUpdate
 }
