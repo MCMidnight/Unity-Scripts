@@ -7,7 +7,7 @@ using UnityEngine;
 /// More info Coming Soon
 /// STANDALONE: Does not require any other scripts.
 /// NOTE: PLEASE DO NOT KILL OR DESTROY OBJECTS WITHOUT UNSUBSCRIBING IF they are using this if you do this script DOES NOT check.
-/// Updated: by Midnight - 05/01/2025
+/// Updated: Midnight - 05/01/2025 (Performence Update), Midnight - 08/01/2025 (Fetal Flaw removal) 
 /// </summary>
 
 public class UpdateManager : MonoBehaviour
@@ -18,11 +18,19 @@ public class UpdateManager : MonoBehaviour
     {
         public readonly UpdateType Type;
         public readonly int Index;
-        public SubscriptionToken(UpdateType type, int index)
+        private readonly Action _action; // Store reference to validate that this isn't another method or is that method of course now does need a Action to check it with though.
+        
+        public SubscriptionToken(UpdateType type, int index, Action action)
         {
             Type = type;
             Index = index;
+            _action = action;
         }
+        
+        /// <summary>
+        /// Checks if this token's action matches the given action.
+        /// </summary>
+        public bool Matches(Action action) => _action == action;
     }
 
     internal static UpdateManager Instance { get; private set; }
@@ -61,11 +69,11 @@ public class UpdateManager : MonoBehaviour
     /// </summary>
     public SubscriptionToken Subscribe(UpdateType type, Action action)
     {
-        if (action == null) return new SubscriptionToken(type, -1);
+        if (action == null) return new SubscriptionToken(type, -1, null);
         var list = _subs[(int)type];
         var index = list.Count;
         list.Add(action);
-        return new SubscriptionToken(type, index);
+        return new SubscriptionToken(type, index, action);
     }
 
     /// <summary>
@@ -78,10 +86,10 @@ public class UpdateManager : MonoBehaviour
         token = null;
         if (action == null) return false;
         var list = _subs[(int)type];
-        var index = list.Count;
         if (list.Contains(action)) return false;
+        var index = list.Count;
         list.Add(action);
-        token =  new SubscriptionToken(type, index);
+        token = new SubscriptionToken(type, index, action);
         return true;
     }
 
@@ -105,13 +113,18 @@ public class UpdateManager : MonoBehaviour
     
     /// <summary>
     /// Unsubscribes using the provided token and returns true if removed.
-    /// Tokens can become invalid if other unsubscribes happened earlier.
+    /// Now validates that the token's action matches what's at the index.
     /// </summary>
     public bool Unsubscribe(SubscriptionToken token)
     {
         if (token.Index < 0) return false;
         var list = _subs[(int)token.Type];
-        if (token.Index >= list.Count || list[token.Index] == null) return false;
+        if (token.Index >= list.Count) return false;
+        
+        var action = list[token.Index];
+        if (action == null || !token.Matches(action)) 
+            return false; // Token is stale or invalid!
+        
         var last = list.Count - 1;
         if (token.Index != last) list[token.Index] = list[last];
         list.RemoveAt(last);
@@ -120,12 +133,16 @@ public class UpdateManager : MonoBehaviour
     
     /// <summary>
     /// Returns true if the token is valid.
+    /// Now validates that the action at the index matches the token's action.
     /// </summary>
     public bool IsValid(SubscriptionToken token)
     {
         if (token.Index < 0) return false;
         var list = _subs[(int)token.Type];
-        return token.Index < list.Count && list[token.Index] != null;
+        if (token.Index >= list.Count) return false;
+        
+        var action = list[token.Index];
+        return action != null && token.Matches(action);
     }
 
     /// <summary>
